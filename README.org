@@ -1,0 +1,152 @@
+#+TITLE: Personal Wordlists
+#+SUBTITLE: Toolkit for fetching and building tiered wordlists & cracking rules
+#+OPTIONS: toc:2 num:nil
+
+* Overview
+
+This repository is for assembling the wordlists and rules that I used mainly in
+web content discovery, DNS enumeration and password cracking.
+
+#+begin_src sh
+# 0. Clone the repository
+git clone https://github.com/fuzztheplanet/wordlists.git
+cd wordlists
+
+# 1. Download every source into the current directory
+./fetch.sh
+
+# 2. Build the distilled, tiered custom lists
+./gen-dns.sh            # -> ./custom/dns/
+./gen-passwords.sh      # -> ./custom/passwords/
+./gen-web.sh            # -> ./custom/web/
+
+# 3. Use them
+ffuf -u 'http://www.example.com/FUZZ' -w ./custom/web/paths_2_small.txt
+#+end_src
+
+* Scripts
+** fetch.sh - download the raw sources
+
+#+begin_example
+./fetch.sh -h
+
+Fetch popular password wordlists and cracking rules in parallel.
+
+Usage:
+  ./fetch.sh [options] [wordlist ...]
+
+Options:
+  -o, --outdir DIR   Where to place the wordlists (default: current directory)
+  -f, --force        Re-download wordlists that are already present
+  -l, --list         List the available wordlists and exit
+  -q, --quiet        Only print warnings and errors
+  -h, --help         Show this help and exit
+
+Available wordlists: crackstation, hashcat-rules, pwdb, seclists, webenum.
+
+With no wordlist arguments, every available target is fetched.
+
+Examples:
+  ./fetch.sh                          # everything, into $PWD
+  ./fetch.sh -o /opt/wordlists        # everything, into /opt/wordlists
+  ./fetch.sh seclists pwdb            # only these two
+  ./fetch.sh -f hashcat-rules         # redownload just the hashcat / One Rule rules
+#+end_example
+
+** gen-dns.sh - tiered DNS label lists
+
+#+begin_example
+./gen-dns.sh -h
+
+Build tiered DNS wordlists (subdomain / hostname labels)
+
+Usage:
+  ./gen-dns.sh [options]
+
+Options:
+  -o, --outdir DIR    Where to write the lists      (default: ./custom/dns)
+  -w, --source DIR    Directory holding seclists/   (default: .)
+  -s, --small N       Size of the small tier        (default: 5000)
+  -m, --medium N      Cumulative size of medium     (default: 50000)
+  -b, --big N         Cumulative size of big        (default: 500000)
+  -j, --jobs N        Parallelism for sort          (default: nproc)
+  -k, --keep          Keep the temporary work directory
+  -h, --help          Show this help and exit
+
+Produces four disjoint files under --outdir, each holding labels NOT present
+in the smaller tiers, ordered so the most commonly seen come first:
+
+  1_small.txt    most common subdomain labels       (top --small)
+  2_medium.txt   the next band                      (--small .. --medium)
+  3_big.txt      the next band                      (--medium .. --big)
+  4_all.txt      every remaining unique label in the corpus
+#+end_example
+
+** gen-passwords.sh - tiered password lists
+
+#+begin_example
+./gen-passwords.sh -h
+
+Generate tiered password wordlists from the available wordlists.
+
+Usage:
+  ./gen-passwords.sh [options]
+
+Options:
+  -o, --outdir DIR    Where to write the generated lists (default: ./custom)
+  -w, --source DIR    Directory holding seclists/ and pwdb/ (default: .)
+  -s, --small N       Size of the small tier   (default: 10000)
+  -m, --medium N      Cumulative size of medium (default: 100000)
+  -b, --big N         Cumulative size of big    (default: 1000000)
+  -j, --jobs N        Parallelism for sort      (default: nproc)
+  -k, --keep          Keep the temporary work directory instead of deleting it
+  -h, --help          Show this help and exit
+
+It produces four disjoint files, each containing passwords NOT present in the
+smaller tiers, ordered so the most common come first:
+
+  2_small.txt    the most common passwords            (--small)
+  3_medium.txt   the next band                        (--small .. --medium)
+  4_big.txt      the next band                        (--medium .. --big)
+  5_all.txt      every remaining unique password in the corpus
+#+end_example
+
+** gen-web.sh - tiered web-enumeration lists
+
+#+begin_example
+./gen-web.sh -h
+
+Build tiered web-enumeration wordlists (URL paths + API routes) from the
+downloaded SecLists set, optionally enriched with the webenum sources
+(Assetnote, OneListForAll) fetched by ./fetch.sh.
+
+Usage:
+  ./gen-web.sh [options]
+
+Options:
+  -o, --outdir DIR    Where to write the lists      (default: ./custom/web)
+  -w, --source DIR    Directory holding seclists/ (and webenum/) (default: .)
+  -s, --small N       Size of the small path tier   (default: 5000)
+  -m, --medium N      Cumulative size of medium     (default: 30000)
+  -b, --big N         Cumulative size of big        (default: 100000)
+  -j, --jobs N        Parallelism for sort          (default: nproc)
+  -k, --keep          Keep the temporary work directory
+  -h, --help          Show this help and exit
+
+Produces, under --outdir:
+
+  paths_2_small.txt    most common content-discovery paths (top --small)
+  paths_3_medium.txt   the next band                       (--small .. --medium)
+  paths_4_big.txt      the next band                       (--medium .. --big)
+  paths_5_all.txt      every remaining unique path in the corpus
+  api.txt              merged, de-noised API endpoint list
+  extensions.txt       file extensions for -x/--extensions fuzzing
+#+end_example
+* Sources
+
+- [[https://wordlists.assetnote.io/][Assetnote wordlists]]
+- [[https://crackstation.net/][CrackStation]]
+- [[https://github.com/hashcat/hashcat][Hashcat]]
+- [[https://github.com/NotSoSecure/password_cracking_rules][OneRuleToRuleThemAll]], [[https://github.com/stealthsploit/OneRuleToRuleThemStill][OneRuleToRuleThemStill]] and [[https://github.com/six2dez/OneListForAll][OneListForAll]]
+- [[https://github.com/ignis-sec/Pwdb-Public][Pwdb-Public]]
+- [[https://github.com/danielmiessler/SecLists][SecLists]]

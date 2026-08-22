@@ -12,9 +12,7 @@
 #   -q, --quiet        Only print warnings and errors
 #   -h, --help         Show this help and exit
 #
-# Available wordlists: crackstation, pwdb, rules, seclists, webenum.
-#   rules   - official hashcat rules + OneRuleToRuleThemAll / ...ThemStill
-#   webenum - extra web-content / API path sources (Assetnote, OneListForAll)
+# Available wordlists: crackstation, hashcat-rules, pwdb, seclists, webenum.
 #
 # With no wordlist arguments, every available target is fetched.
 #
@@ -22,7 +20,7 @@
 #   ./fetch.sh                          # everything, into $PWD
 #   ./fetch.sh -o /opt/wordlists        # everything, into /opt/wordlists
 #   ./fetch.sh seclists pwdb            # only these two
-#   ./fetch.sh rules                    # just the hashcat / One Rule rules
+#   ./fetch.sh -f hashcat-rules         # redownload just the hashcat / One Rule rules
 #
 
 set -Eeuo pipefail
@@ -31,7 +29,7 @@ AVAILABLE_WORDLISTS=(
     crackstation
     pwdb
     seclists
-    rules
+    hashcat-rules
     webenum
 )
 
@@ -139,7 +137,7 @@ fetch_seclists() {
     fi
 }
 
-fetch_rules() {
+fetch_hashcat-rules() {
     local dir="$1"
 
     # Official Hashcat rules
