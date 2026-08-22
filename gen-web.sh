@@ -19,12 +19,18 @@
 #
 # Produces, under --outdir:
 #
-#   paths_2_small.txt    most common content-discovery paths (top --small)
-#   paths_3_medium.txt   the next band                       (--small .. --medium)
-#   paths_4_big.txt      the next band                       (--medium .. --big)
-#   paths_5_all.txt      every remaining unique path in the corpus
+#   2_small.txt          most common content-discovery paths (top --small)
+#   3_medium.txt         the next band                       (--small .. --medium)
+#   4_big.txt            the next band                       (--medium .. --big)
+#   5_rest.txt           every remaining unique path in the corpus
 #   api.txt              merged, de-noised API endpoint list
 #   extensions.txt       file extensions for -x/--extensions fuzzing
+#
+# It also writes one combined path list, one level up from --outdir and named
+# after the category (custom/web.txt with the default --outdir):
+#
+#   ../web.txt           every unique path (all path tiers concatenated,
+#                        common-first; api/extensions are kept separate)
 #
 
 set -Eeuo pipefail
@@ -33,6 +39,7 @@ export LC_ALL=C
 
 SOURCE="."
 OUTDIR="./custom/web"
+NAME="web"
 SMALL=5000
 MEDIUM=30000
 BIG=100000
@@ -177,9 +184,9 @@ main() {
     (( s > ranked )) && s="$ranked"
     (( m > ranked )) && m="$ranked"
 
-    sed -n "1,${s}p"          "$WORK/ranked.txt" > "$WORK/paths_2_small.txt"
-    sed -n "$((s + 1)),${m}p" "$WORK/ranked.txt" > "$WORK/paths_3_medium.txt"
-    sed -n "$((m + 1)),\$p"   "$WORK/ranked.txt" > "$WORK/paths_4_big.txt"
+    sed -n "1,${s}p"          "$WORK/ranked.txt" > "$WORK/2_small.txt"
+    sed -n "$((s + 1)),${m}p" "$WORK/ranked.txt" > "$WORK/3_medium.txt"
+    sed -n "$((m + 1)),\$p"   "$WORK/ranked.txt" > "$WORK/4_big.txt"
 
     # --- 2. full path corpus -> catch-all -----------------------------------
     # Everything under Web-Content except the API dir (handled separately),
@@ -202,7 +209,16 @@ main() {
       > "$WORK/corpus_uniq.txt"
 
     sort "${sort_opts[@]}" "$WORK/ranked.txt" > "$WORK/placed_sorted.txt"
-    comm -23 "$WORK/corpus_uniq.txt" "$WORK/placed_sorted.txt" > "$WORK/paths_5_all.txt"
+    comm -23 "$WORK/corpus_uniq.txt" "$WORK/placed_sorted.txt" > "$WORK/5_rest.txt"
+
+    # Combined mega path list. The path tiers are disjoint and together cover
+    # the whole unique path corpus, so a plain concatenation is already
+    # de-duplicated and keeps the common-first ordering. api/extensions are a
+    # different unit and stay in their own files. Published one level up from
+    # --outdir, named after the category (custom/web.txt with the default).
+    cat "$WORK/2_small.txt" "$WORK/3_medium.txt" \
+        "$WORK/4_big.txt"   "$WORK/5_rest.txt" \
+        > "$WORK/mega.txt"
 
     # --- 3. API endpoints ---------------------------------------------------
     info "Building API endpoint list..."
@@ -232,15 +248,18 @@ main() {
     fi
 
     # --- 5. publish ---------------------------------------------------------
-    local out outputs=(paths_2_small paths_3_medium paths_4_big paths_5_all api extensions)
+    local out outputs=(2_small 3_medium 4_big 5_rest api extensions)
     for out in "${outputs[@]}"; do
         mv -f -- "$WORK/${out}.txt" "$OUTDIR/${out}.txt"
     done
+    local mega; mega="$(dirname -- "$OUTDIR")/$NAME.txt"
+    mv -f -- "$WORK/mega.txt" "$mega"
 
     success "Wrote to $OUTDIR:"
     for out in "${outputs[@]}"; do
         printf '      %-18s %12s lines\n' "${out}.txt" "$(count "$OUTDIR/${out}.txt")"
     done
+    success "Combined list: $mega ($(count "$mega") lines)"
 }
 
 main "$@"

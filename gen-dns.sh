@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build tiered DNS wordlists (subdomain / hostname labels)
+# Build tiered DNS wordlists (subdomain names)
 #
 # Usage:
 #   ./gen-dns.sh [options]
@@ -15,13 +15,18 @@
 #   -k, --keep          Keep the temporary work directory
 #   -h, --help          Show this help and exit
 #
-# Produces four disjoint files under --outdir, each holding labels NOT present
+# Produces four disjoint files under --outdir, each holding names NOT present
 # in the smaller tiers, ordered so the most commonly seen come first:
 #
-#   1_small.txt    most common subdomain labels       (top --small)
-#   2_medium.txt   the next band                      (--small .. --medium)
-#   3_big.txt      the next band                      (--medium .. --big)
-#   4_all.txt      every remaining unique label in the corpus
+#   2_small.txt    most common subdomain names       (top --small)
+#   3_medium.txt   the next band                      (--small .. --medium)
+#   4_big.txt      the next band                      (--medium .. --big)
+#   5_rest.txt     every remaining unique name in the corpus
+#
+# It also writes one combined list, one level up from --outdir and named after
+# the category (custom/dns.txt with the default --outdir):
+#
+#   ../dns.txt     every unique name (all tiers concatenated, common-first)
 #
 
 set -Eeuo pipefail
@@ -30,6 +35,7 @@ export LC_ALL=C
 
 SOURCE="."
 OUTDIR="./custom/dns"
+NAME="dns"
 SMALL=5000
 MEDIUM=50000
 BIG=500000
@@ -68,9 +74,9 @@ count() {
 }
 
 normalize_dns() {
-    # Normalize a raw DNS list into bare, lowercase hostname labels: strip CR,
+    # Normalize a raw DNS list into bare, lowercase subdomain names: strip CR,
     # trim, drop blanks/comments, drop a "*." wildcard prefix and any leading or
-    # trailing dots, then keep only entries that are valid label sequences.
+    # trailing dots, then keep only entries that are valid name sequences.
     # Multi-level prefixes ("dev.api") are kept; underscores are kept because
     # service records rely on them (_dmarc, _domainkey).
     awk '
@@ -83,12 +89,12 @@ normalize_dns() {
         $0 !~ /^[a-z0-9_.-]+$/  { next }
         $0 !~ /[a-z0-9]/        { next }
         {
-            n = split($0, label, ".")
+            n = split($0, name, ".")
             for (i = 1; i <= n; i++) {
-                len = length(label[i])
+                len = length(name[i])
                 if (len == 0 || len > 63)                        next
-                if (substr(label[i], 1, 1) == "-")               next
-                if (substr(label[i], len, 1) == "-")             next
+                if (substr(name[i], 1, 1) == "-")               next
+                if (substr(name[i], len, 1) == "-")             next
             }
             print
         }
@@ -142,7 +148,7 @@ main() {
 
     # --- 1. ranked backbone -> the tiers ------------------------------------
     # These sources are frequency-ordered (Cloudflare zone stats, bitquark and
-    # n0kovo mass-scan hit counts), so the first list a label appears in wins
+    # n0kovo mass-scan hit counts), so the first list a name appears in wins
     # its rank. services-names.txt sits near the top: it is small, curated and
     # high-signal for modern infrastructure.
     local backbone=()
@@ -157,7 +163,7 @@ main() {
         "$DNS/combined_subdomains.txt"
     (( ${#backbone[@]} )) || die "No backbone lists found under $DNS"
 
-    info "Ranking labels from ${#backbone[@]} source(s) (top $BIG)..."
+    info "Ranking names from ${#backbone[@]} source(s) (top $BIG)..."
     # The dedup awk exits once it has $BIG uniques; feeding it via process
     # substitution keeps the producer's SIGPIPE out of the pipe status.
     awk -v limit="$BIG" '!seen[$0]++ { print; if (++n >= limit) exit }' \
@@ -165,16 +171,16 @@ main() {
         > "$WORK/ranked.txt"
 
     local ranked; ranked="$(count "$WORK/ranked.txt")"
-    info "Ranked $ranked unique labels."
+    info "Ranked $ranked unique names."
 
     # Clamp the cut points to what the backbone actually yielded.
     local s="$SMALL" m="$MEDIUM"
     (( s > ranked )) && s="$ranked"
     (( m > ranked )) && m="$ranked"
 
-    sed -n "1,${s}p"          "$WORK/ranked.txt" > "$WORK/1_small.txt"
-    sed -n "$((s + 1)),${m}p" "$WORK/ranked.txt" > "$WORK/2_medium.txt"
-    sed -n "$((m + 1)),\$p"   "$WORK/ranked.txt" > "$WORK/3_big.txt"
+    sed -n "1,${s}p"          "$WORK/ranked.txt" > "$WORK/2_small.txt"
+    sed -n "$((s + 1)),${m}p" "$WORK/ranked.txt" > "$WORK/3_medium.txt"
+    sed -n "$((m + 1)),\$p"   "$WORK/ranked.txt" > "$WORK/4_big.txt"
 
     # --- 2. full corpus -> catch-all ----------------------------------------
     # subdomains-top1million-full is shipped as a 7z archive; unpack it into the
@@ -190,7 +196,7 @@ main() {
         fi
     fi
 
-    info "Collecting and de-duplicating the full label corpus (this is the slow part)..."
+    info "Collecting and de-duplicating the full name corpus (this is the slow part)..."
     {
         find "$DNS" -type f -name '*.txt' -not -name 'tlds.txt' -print0
         find "$WORK" -maxdepth 1 -type f -name 'subdomains-top1million-full.txt' -print0
@@ -199,23 +205,35 @@ main() {
       | sort -u "${sort_opts[@]}" \
       > "$WORK/corpus_uniq.txt"
 
-    info "Corpus holds $(count "$WORK/corpus_uniq.txt") unique labels."
+    info "Corpus holds $(count "$WORK/corpus_uniq.txt") unique names."
 
-    # placed = the ranked entries that landed in tiers 1-3; remove them so the
-    # tiers stay disjoint from 4_all.
+    # placed = the ranked entries that landed in tiers 2-4; remove them so the
+    # tiers stay disjoint from 5_rest.
     sort "${sort_opts[@]}" "$WORK/ranked.txt" > "$WORK/placed_sorted.txt"
-    comm -23 "$WORK/corpus_uniq.txt" "$WORK/placed_sorted.txt" > "$WORK/4_all.txt"
+    comm -23 "$WORK/corpus_uniq.txt" "$WORK/placed_sorted.txt" > "$WORK/5_rest.txt"
 
-    # --- 3. publish ---------------------------------------------------------
-    local out outputs=(1_small 2_medium 3_big 4_all)
+    # --- 3. combined mega list ----------------------------------------------
+    # The tiers are disjoint and together cover the whole unique corpus, so a
+    # plain concatenation is already de-duplicated and keeps the common-first
+    # ordering (ranked tiers, then the sorted remainder). It is published one
+    # level up from --outdir, named after the category (custom/dns.txt with the
+    # default --outdir).
+    cat "$WORK/2_small.txt" "$WORK/3_medium.txt" "$WORK/4_big.txt" "$WORK/5_rest.txt" \
+        > "$WORK/mega.txt"
+
+    # --- 4. publish ---------------------------------------------------------
+    local out outputs=(2_small 3_medium 4_big 5_rest)
     for out in "${outputs[@]}"; do
         mv -f -- "$WORK/${out}.txt" "$OUTDIR/${out}.txt"
     done
+    local mega; mega="$(dirname -- "$OUTDIR")/$NAME.txt"
+    mv -f -- "$WORK/mega.txt" "$mega"
 
     success "Wrote to $OUTDIR:"
     for out in "${outputs[@]}"; do
         printf '      %-12s %12s lines\n' "${out}.txt" "$(count "$OUTDIR/${out}.txt")"
     done
+    success "Combined list: $mega ($(count "$mega") lines)"
 }
 
 main "$@"

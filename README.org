@@ -21,7 +21,7 @@ cd wordlists
 ./gen-web.sh            # -> ./custom/web/
 
 # 3. Use them
-ffuf -u 'http://www.example.com/FUZZ' -w ./custom/web/paths_2_small.txt
+ffuf -u 'http://www.example.com/FUZZ' -w ./custom/web/2_small.txt
 #+end_src
 
 * Scripts
@@ -53,12 +53,12 @@ Examples:
   ./fetch.sh -f hashcat-rules         # redownload just the hashcat / One Rule rules
 #+end_example
 
-** gen-dns.sh - tiered DNS label lists
+** gen-dns.sh - tiered DNS subdomain lists
 
 #+begin_example
 ./gen-dns.sh -h
 
-Build tiered DNS wordlists (subdomain / hostname labels)
+Build tiered DNS wordlists (subdomain names)
 
 Usage:
   ./gen-dns.sh [options]
@@ -73,13 +73,18 @@ Options:
   -k, --keep          Keep the temporary work directory
   -h, --help          Show this help and exit
 
-Produces four disjoint files under --outdir, each holding labels NOT present
+Produces four disjoint files under --outdir, each holding names NOT present
 in the smaller tiers, ordered so the most commonly seen come first:
 
-  1_small.txt    most common subdomain labels       (top --small)
-  2_medium.txt   the next band                      (--small .. --medium)
-  3_big.txt      the next band                      (--medium .. --big)
-  4_all.txt      every remaining unique label in the corpus
+  2_small.txt    most common subdomain names       (top --small)
+  3_medium.txt   the next band                      (--small .. --medium)
+  4_big.txt      the next band                      (--medium .. --big)
+  5_rest.txt     every remaining unique name in the corpus
+
+It also writes one combined list, one level up from --outdir and named after
+the category (custom/dns.txt with the default --outdir):
+
+  ../dns.txt     every unique name (all tiers concatenated, common-first)
 #+end_example
 
 ** gen-passwords.sh - tiered password lists
@@ -108,7 +113,13 @@ smaller tiers, ordered so the most common come first:
   2_small.txt    the most common passwords            (--small)
   3_medium.txt   the next band                        (--small .. --medium)
   4_big.txt      the next band                        (--medium .. --big)
-  5_all.txt      every remaining unique password in the corpus
+  5_rest.txt     every remaining unique password in the corpus
+
+It also writes one combined list, one level up from --outdir and named after
+the category (custom/passwords.txt with the default --outdir):
+
+  ../passwords.txt   every unique password (all tiers concatenated,
+                     common-first)
 #+end_example
 
 ** gen-web.sh - tiered web-enumeration lists
@@ -135,12 +146,18 @@ Options:
 
 Produces, under --outdir:
 
-  paths_2_small.txt    most common content-discovery paths (top --small)
-  paths_3_medium.txt   the next band                       (--small .. --medium)
-  paths_4_big.txt      the next band                       (--medium .. --big)
-  paths_5_all.txt      every remaining unique path in the corpus
+  2_small.txt          most common content-discovery paths (top --small)
+  3_medium.txt         the next band                       (--small .. --medium)
+  4_big.txt            the next band                       (--medium .. --big)
+  5_rest.txt           every remaining unique path in the corpus
   api.txt              merged, de-noised API endpoint list
   extensions.txt       file extensions for -x/--extensions fuzzing
+
+It also writes one combined path list, one level up from --outdir and named
+after the category (custom/web.txt with the default --outdir):
+
+  ../web.txt           every unique path (all path tiers concatenated,
+                       common-first; api/extensions are kept separate)
 #+end_example
 * Sources
 

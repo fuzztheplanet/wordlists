@@ -21,7 +21,13 @@
 #   2_small.txt    the most common passwords            (--small)
 #   3_medium.txt   the next band                        (--small .. --medium)
 #   4_big.txt      the next band                        (--medium .. --big)
-#   5_all.txt      every remaining unique password in the corpus
+#   5_rest.txt     every remaining unique password in the corpus
+#
+# It also writes one combined list, one level up from --outdir and named after
+# the category (custom/passwords.txt with the default --outdir):
+#
+#   ../passwords.txt   every unique password (all tiers concatenated,
+#                      common-first)
 #
 
 set -Eeuo pipefail
@@ -30,6 +36,7 @@ export LC_ALL=C
 
 SOURCE="."
 OUTDIR="./custom/passwords"
+NAME="passwords"
 SMALL=10000
 MEDIUM=100000
 BIG=1000000
@@ -142,7 +149,7 @@ main() {
 
     # --- 1. ranked backbone -> the common tiers -----------------------------
     # Tokenize through the SAME normalize() as the corpus so both halves use
-    # identical (word-split) units -- otherwise the placed set and 5_all would
+    # identical (word-split) units -- otherwise the placed set and 5_rest would
     # not line up. The dedup awk exits once it has $BIG uniques; feeding it via
     # process substitution keeps the producer's SIGPIPE out of the pipe status.
     info "Building frequency-ranked backbone (top $BIG)..."
@@ -175,20 +182,32 @@ main() {
     info "Corpus holds $(count "$WORK/corpus_uniq.txt") unique passwords."
 
     # placed = the ranked entries that landed in tiers 2-4; remove them so the
-    # tiers stay disjoint from 5_all.
+    # tiers stay disjoint from 5_rest.
     sort "${sort_opts[@]}" "$WORK/ranked.txt" > "$WORK/placed_sorted.txt"
-    comm -23 "$WORK/corpus_uniq.txt" "$WORK/placed_sorted.txt" > "$WORK/5_all.txt"
+    comm -23 "$WORK/corpus_uniq.txt" "$WORK/placed_sorted.txt" > "$WORK/5_rest.txt"
 
-    # --- 3. publish ---------------------------------------------------------
+    # --- 3. combined mega list ----------------------------------------------
+    # The tiers are disjoint and together cover the whole unique corpus, so a
+    # plain concatenation is already de-duplicated and keeps the common-first
+    # ordering (ranked tiers, then the sorted remainder). It is published one
+    # level up from --outdir, named after the category (custom/passwords.txt
+    # with the default --outdir).
+    cat "$WORK/2_small.txt" "$WORK/3_medium.txt" "$WORK/4_big.txt" "$WORK/5_rest.txt" \
+        > "$WORK/mega.txt"
+
+    # --- 4. publish ---------------------------------------------------------
     local out
-    for out in 2_small 3_medium 4_big 5_all; do
+    for out in 2_small 3_medium 4_big 5_rest; do
         mv -f -- "$WORK/${out}.txt" "$OUTDIR/${out}.txt"
     done
+    local mega; mega="$(dirname -- "$OUTDIR")/$NAME.txt"
+    mv -f -- "$WORK/mega.txt" "$mega"
 
     success "Wrote to $OUTDIR:"
-    for out in 2_small 3_medium 4_big 5_all; do
+    for out in 2_small 3_medium 4_big 5_rest; do
         printf '      %-12s %12s lines\n' "${out}.txt" "$(count "$OUTDIR/${out}.txt")"
     done
+    success "Combined list: $mega ($(count "$mega") lines)"
 }
 
 main "$@"
