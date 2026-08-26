@@ -38,7 +38,10 @@ ASSETNOTE_DIRS_URL="https://wordlists-cdn.assetnote.io/data/automated/httparchiv
 CRACKSTATION_FULL_URL="https://crackstation.net/files/crackstation.txt.gz"
 CRACKSTATION_HUMAN_URL="https://crackstation.net/files/crackstation-human-only.txt.gz"
 HASHCAT_URL="https://github.com/hashcat/hashcat/archive/refs/heads/master.tar.gz"
+KITERUNNER_LARGE_URL="https://wordlists-cdn.assetnote.io/data/kiterunner/routes-large.kite.tar.gz"
+KITERUNNER_SMALL_URL="https://wordlists-cdn.assetnote.io/data/kiterunner/routes-small.kite.tar.gz"
 ONELISTFORALL_MICRO_URL="https://raw.githubusercontent.com/six2dez/OneListForAll/main/onelistforallmicro.txt"
+ONELISTFORALL_SHORT_URL="https://raw.githubusercontent.com/six2dez/OneListForAll/main/onelistforallshort.txt"
 ONE_RULE_ALL_URL="https://raw.githubusercontent.com/NotSoSecure/password_cracking_rules/master/OneRuleToRuleThemAll.rule"
 ONE_RULE_STILL_URL="https://raw.githubusercontent.com/stealthsploit/OneRuleToRuleThemStill/main/OneRuleToRuleThemStill.rule"
 PWDB_URL="https://github.com/ignis-sec/Pwdb-Public/archive/refs/heads/master.tar.gz"
@@ -155,9 +158,23 @@ fetch_hashcat-rules() {
 fetch_webenum() {
     local dir="$1"
 
-    download "$ASSETNOTE_DIRS_URL"      "$dir/assetnote-directories.txt"
-    download "$ASSETNOTE_APIROUTES_URL" "$dir/assetnote-apiroutes.txt"
-    download "$ONELISTFORALL_MICRO_URL" "$dir/onelistforallmicro.txt"
+    download "$ASSETNOTE_DIRS_URL"       "$dir/assetnote-directories.txt"
+    download "$ASSETNOTE_APIROUTES_URL"  "$dir/assetnote-apiroutes.txt"
+
+    # OneListForAll path-discovery lists (only micro + short ship as files;
+    # the combined onelistforall.txt is a build artifact, not distributed).
+    download "$ONELISTFORALL_MICRO_URL"  "$dir/onelistforallmicro.txt"
+    download "$ONELISTFORALL_SHORT_URL"  "$dir/onelistforallshort.txt"
+
+    # Kiterunner API route sets: compiled .kite trie files shipped as tarballs.
+    # gen-web.sh extracts the plain routes from them at build time.
+    download "$KITERUNNER_SMALL_URL" "$dir/routes-small.kite.tar.gz"
+    tar -xzf "$dir/routes-small.kite.tar.gz" -C "$dir"
+    rm -f "$dir/routes-small.kite.tar.gz"
+
+    download "$KITERUNNER_LARGE_URL" "$dir/routes-large.kite.tar.gz"
+    tar -xzf "$dir/routes-large.kite.tar.gz" -C "$dir"
+    rm -f "$dir/routes-large.kite.tar.gz"
 }
 
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Build tiered web-enumeration wordlists (URL paths + API routes) from the
-# downloaded SecLists set, optionally enriched with the webenum sources
-# (Assetnote, OneListForAll) fetched by ./fetch.sh.
+# Build tiered web-enumeration wordlists (URL paths + API endpoints) from the
+# downloaded SecLists set, enriched with the webenum sources fetched by
+# ./fetch.sh (Assetnote, OneListForAll, Kiterunner).
 #
 # Usage:
 #   ./gen-web.sh [options]
@@ -10,27 +10,28 @@
 # Options:
 #   -o, --outdir DIR    Where to write the lists      (default: ./custom/web)
 #   -w, --source DIR    Directory holding seclists/ (and webenum/) (default: .)
-#   -s, --small N       Size of the small path tier   (default: 5000)
+#   -s, --small N       Size of the small tier        (default: 5000)
 #   -m, --medium N      Cumulative size of medium     (default: 30000)
 #   -b, --big N         Cumulative size of big        (default: 100000)
 #   -j, --jobs N        Parallelism for sort          (default: nproc)
 #   -k, --keep          Keep the temporary work directory
 #   -h, --help          Show this help and exit
 #
-# Produces, under --outdir:
+# The tiers hold both paths and API endpoints, ranked most-useful-first so the
+# small tiers are the most efficient to run. Produces, under --outdir:
 #
-#   2_small.txt          most common content-discovery paths (top --small)
-#   3_medium.txt         the next band                       (--small .. --medium)
-#   4_big.txt            the next band                       (--medium .. --big)
-#   5_rest.txt           every remaining unique path in the corpus
-#   api.txt              merged, de-noised API endpoint list
+#   2_small.txt          most useful paths + API endpoints    (top --small)
+#   3_medium.txt         the next band                        (--small .. --medium)
+#   4_big.txt            the next band                        (--medium .. --big)
+#   5_rest.txt           every remaining unique path/endpoint in the corpus
+#   api.txt              dedicated API endpoint list (Assetnote + Kiterunner + SecLists)
 #   extensions.txt       file extensions for -x/--extensions fuzzing
 #
-# It also writes one combined path list, one level up from --outdir and named
-# after the category (custom/web.txt with the default --outdir):
+# It also writes one combined list, one level up from --outdir and named after
+# the category (custom/web.txt with the default --outdir):
 #
-#   ../web.txt           every unique path (all path tiers concatenated,
-#                        common-first; api/extensions are kept separate)
+#   ../web.txt           every unique path + endpoint (all tiers concatenated,
+#                        most-useful first; extensions kept separate)
 #
 
 set -Eeuo pipefail
@@ -46,6 +47,14 @@ BIG=100000
 JOBS="$(nproc 2>/dev/null || echo 4)"
 KEEP=0
 WORK=""
+
+# Filled in by main(): resolved source dirs and the pre-extracted Kiterunner
+# route files. Kept global so the small stream helpers can see them.
+WC=""
+WEBENUM=""
+STRINGS_BIN=""
+KITE_SMALL=""
+KITE_LARGE=""
 
 cleanup() {
     # Keep or remove working directory
@@ -77,45 +86,71 @@ count() {
     wc -l < "$1" | tr -d ' '
 }
 
-normalize_path() {
-    # Normalize a raw path list: strip CR, trim, drop blanks/comments, remove a
-    # leading "/", and reject lines with whitespace or control chars. Leading
-    # dots are kept.
+sanitize_path() {
+    # Normalize any raw path / API endpoint into a clean, fuzzable token so the
+    # different sources line up and dedup cleanly:
+    #   * strip trailing CR and surrounding whitespace
+    #   * drop blank lines and comments
+    #   * drop any query string (everything from the first '?')
+    #   * collapse repeated slashes, strip leading/trailing slashes
+    #   * reject anything containing whitespace or control characters
+    #   * keep only URL-path characters -- unreserved plus a few sub-delims and
+    #     the {template} braces used by API route lists; drop everything else
+    #     (so junk like <, >, [, ], \, quotes, commas from noisy sources goes)
+    #   * require at least one alphanumeric so pure punctuation is dropped
+    awk '
+        { sub(/\r$/, ""); gsub(/^[ \t]+|[ \t]+$/, "") }
+        $0 == ""                { next }
+        substr($0, 1, 1) == "#" { next }
+        { sub(/\?.*/, ""); gsub(/\/+/, "/"); sub(/^\/+/, ""); sub(/\/+$/, "") }
+        $0 == ""                { next }
+        /[[:space:]]/           { next }
+        /[[:cntrl:]]/           { next }
+        $0 !~ /[A-Za-z0-9]/     { next }
+        $0 ~ /[^A-Za-z0-9._~:@%+{}\/-]/ { next }
+        { print }
+    '
+}
+
+normalize_ext() {
+    # Lenient normalization for file extensions: strip CR, trim, drop blanks and
+    # comments, reject whitespace/control. Extensions keep their punctuation
+    # (leading dots, IIS ";" tricks, ...) so they are NOT run through
+    # sanitize_path.
     awk '
         { sub(/\r$/, ""); gsub(/^[ \t]+|[ \t]+$/, "") }
         $0 == ""            { next }
         substr($0, 1, 1) == "#" { next }
-        { sub(/^\/+/, "") }
-        $0 == ""            { next }
         /[[:space:]]/       { next }
         /[[:cntrl:]]/       { next }
         { print }
     '
 }
 
-normalize_api() {
-    # Stricter filter for API endpoints: same as above, but keep only tokens
-    # that look like real routes (must contain only URL-path-ish chars).
-    awk '
-        { sub(/\r$/, ""); gsub(/^[ \t]+|[ \t]+$/, "") }
-        $0 == ""            { next }
-        substr($0, 1, 1) == "#" { next }
-        { sub(/^\/+/, "") }
-        $0 == ""            { next }
-        $0 !~ /[A-Za-z0-9]/ { next }
-        $0 ~ /[^A-Za-z0-9._~:{}\/?=&%+-]/ { next }
-        { print }
-    '
-}
-
-collect_existing() {
-    # Append each argument to the named array only if it is an existing file.
-    local -n _out="$1"; shift
+cat_existing() {
+    # cat the given files in order, silently skipping any that do not exist (an
+    # empty path -- e.g. an unset Kiterunner file -- counts as missing). Never
+    # fails the pipeline just because a source is absent.
     local f
     for f in "$@"; do
-        [[ -f "$f" ]] && _out+=("$f")
+        [[ -n "$f" && -f "$f" ]] && cat -- "$f"
     done
     return 0
+}
+
+kite_routes() {
+    # Extract plain route paths from a compiled Kiterunner .kite file. Routes are
+    # stored as length-prefixed UTF-8 strings that begin with "/", so `strings`
+    # isolates them; every other token (32-hex route hashes, HTTP method names)
+    # is dropped because it does not start with "/". Needs `strings` (binutils);
+    # without it the routes are simply skipped.
+    local f="$1"
+    [[ -f "$f" ]] || return 0
+    if [[ -z "$STRINGS_BIN" ]]; then
+        warning "No 'strings' binary found -- skipping $(basename "$f")"
+        return 0
+    fi
+    "$STRINGS_BIN" -- "$f" | grep '^/' || true
 }
 
 parse_args() {
@@ -144,8 +179,8 @@ main() {
     (( SMALL <= MEDIUM )) || die "--small ($SMALL) must be <= --medium ($MEDIUM)"
     (( MEDIUM <= BIG ))   || die "--medium ($MEDIUM) must be <= --big ($BIG)"
 
-    local WC="$SOURCE/seclists/Discovery/Web-Content"
-    local WEBENUM="$SOURCE/webenum"
+    WC="$SOURCE/seclists/Discovery/Web-Content"
+    WEBENUM="$SOURCE/webenum"
     [[ -d "$WC" ]] || die "SecLists Web-Content not found at '$WC' (run ./fetch.sh seclists first?)"
 
     if [[ -d "$WEBENUM" ]]; then
@@ -154,31 +189,59 @@ main() {
         info "No webenum/ dir -- building from SecLists only (fetch 'webenum' for more)"
     fi
 
+    STRINGS_BIN="$(command -v strings || true)"
+
     mkdir -p -- "$OUTDIR"
     OUTDIR="$(cd -- "$OUTDIR" && pwd)"
 
     WORK="$(mktemp -d "${OUTDIR}/.gen.XXXXXXXX")"
     local sort_opts=(-T "$WORK" -S 50% --parallel="$JOBS")
 
-    # --- 1. ranked backbone -> the path tiers -------------------------------
-    # RAFT lists are frequency-ordered; common.txt seeds the very top. First
-    # occurrence wins the rank. Only existing files are used.
-    local backbone=()
-    collect_existing backbone \
-        "$WC/common.txt" \
-        "$WEBENUM/assetnote-directories.txt" \
-        "$WC/raft-large-directories.txt" \
-        "$WC/raft-large-files.txt" \
-        "$WC/raft-large-words.txt"
-    (( ${#backbone[@]} )) || die "No backbone lists found under $WC"
+    # --- 0. pre-extract Kiterunner routes (once, reused everywhere) ----------
+    # Running `strings` over the large .kite is not cheap, so materialize the raw
+    # routes to the work dir and treat them as ordinary source files afterwards.
+    if [[ -f "$WEBENUM/routes-small.kite" ]]; then
+        info "Extracting Kiterunner small routes..."
+        kite_routes "$WEBENUM/routes-small.kite" > "$WORK/kite-small.txt"
+        [[ -s "$WORK/kite-small.txt" ]] && KITE_SMALL="$WORK/kite-small.txt"
+    fi
+    if [[ -f "$WEBENUM/routes-large.kite" ]]; then
+        info "Extracting Kiterunner large routes..."
+        kite_routes "$WEBENUM/routes-large.kite" > "$WORK/kite-large.txt"
+        [[ -s "$WORK/kite-large.txt" ]] && KITE_LARGE="$WORK/kite-large.txt"
+    fi
 
-    info "Ranking common paths from ${#backbone[@]} source(s) (top $BIG)..."
+    # --- 1. ranked backbone -> the tiers ------------------------------------
+    # Priority order == usefulness order: the first list a token appears in wins
+    # its rank, so the small tiers are the highest-signal. Curated/common paths
+    # and the top real-world (Assetnote httparchive) directories & API routes
+    # lead; the broad RAFT/OneListForAll/Kiterunner-large sets fill in behind.
+    # Everything runs through sanitize_path so paths and endpoints share units.
+    local backbone=(
+        "$WC/common.txt"                          # curated high-hit paths
+        "$WC/quickhits.txt"                       # high-signal specific files (.git, .env, ...)
+        "$WEBENUM/assetnote-directories.txt"      # top real-world directories
+        "$WEBENUM/assetnote-apiroutes.txt"        # top real-world API routes
+        "$WC/raft-large-directories.txt"
+        "$WC/raft-large-files.txt"
+        "$WC/api/api-seen-in-wild.txt"            # curated API endpoints
+        "$WC/api/api-endpoints.txt"
+        "$KITE_SMALL"                             # Kiterunner curated API routes
+        "$WC/raft-large-words.txt"
+        "$WEBENUM/onelistforallmicro.txt"         # OneListForAll (curated)
+        "$WEBENUM/onelistforallshort.txt"         # OneListForAll (broad)
+        "$KITE_LARGE"                             # Kiterunner broad API routes
+    )
+
+    info "Ranking paths + API endpoints (top $BIG)..."
+    # The dedup awk exits once it has $BIG uniques; feeding it via process
+    # substitution keeps the producer's SIGPIPE out of the pipe status.
     awk -v limit="$BIG" '!seen[$0]++ { print; if (++n >= limit) exit }' \
-        < <(cat -- "${backbone[@]}" | normalize_path) \
+        < <(cat_existing "${backbone[@]}" | sanitize_path) \
         > "$WORK/ranked.txt"
 
     local ranked; ranked="$(count "$WORK/ranked.txt")"
-    info "Ranked $ranked unique paths."
+    info "Ranked $ranked unique paths/endpoints."
 
     local s="$SMALL" m="$MEDIUM"
     (( s > ranked )) && s="$ranked"
@@ -188,66 +251,67 @@ main() {
     sed -n "$((s + 1)),${m}p" "$WORK/ranked.txt" > "$WORK/3_medium.txt"
     sed -n "$((m + 1)),\$p"   "$WORK/ranked.txt" > "$WORK/4_big.txt"
 
-    # --- 2. full path corpus -> catch-all -----------------------------------
-    # Everything under Web-Content except the API dir (handled separately),
-    # plus the optional webenum extras.
-    info "Collecting and de-duplicating the full path corpus..."
-    local corpus_extra=()
-    collect_existing corpus_extra \
-        "$WEBENUM/assetnote-directories.txt" \
-        "$WEBENUM/onelistforallmicro.txt"
+    # --- 2. full corpus -> catch-all ----------------------------------------
+    # Everything under Web-Content (API dir included now that the tiers mix
+    # paths and endpoints), plus every webenum extra and the Kiterunner routes.
+    info "Collecting and de-duplicating the full corpus (this is the slow part)..."
     {
-        find "$WC" -type f -name '*.txt' -not -path '*/api/*' -print0
-        # `if` (not `&&`) so an empty extras list leaves the group's exit
-        # status at 0 -- otherwise set -e/pipefail would abort the run.
-        if (( ${#corpus_extra[@]} )); then
-            printf '%s\0' "${corpus_extra[@]}"
-        fi
-    } | xargs -0 cat -- \
-      | normalize_path \
+        find "$WC" -type f -name '*.txt' -print0 | xargs -0 cat --
+        cat_existing \
+            "$WEBENUM/assetnote-directories.txt" \
+            "$WEBENUM/assetnote-apiroutes.txt" \
+            "$WEBENUM/onelistforallmicro.txt" \
+            "$WEBENUM/onelistforallshort.txt" \
+            "$KITE_SMALL" \
+            "$KITE_LARGE"
+    } | sanitize_path \
       | sort -u "${sort_opts[@]}" \
       > "$WORK/corpus_uniq.txt"
 
+    info "Corpus holds $(count "$WORK/corpus_uniq.txt") unique paths/endpoints."
+
+    # placed = the ranked entries that landed in tiers 2-4; remove them so the
+    # tiers stay disjoint from 5_rest.
     sort "${sort_opts[@]}" "$WORK/ranked.txt" > "$WORK/placed_sorted.txt"
     comm -23 "$WORK/corpus_uniq.txt" "$WORK/placed_sorted.txt" > "$WORK/5_rest.txt"
 
-    # Combined mega path list. The path tiers are disjoint and together cover
-    # the whole unique path corpus, so a plain concatenation is already
-    # de-duplicated and keeps the common-first ordering. api/extensions are a
-    # different unit and stay in their own files. Published one level up from
-    # --outdir, named after the category (custom/web.txt with the default).
+    # --- 3. combined mega list ----------------------------------------------
+    # The tiers are disjoint and together cover the whole unique corpus, so a
+    # plain concatenation is already de-duplicated and keeps the most-useful
+    # first ordering. Published one level up from --outdir, named after the
+    # category (custom/web.txt with the default --outdir).
     cat "$WORK/2_small.txt" "$WORK/3_medium.txt" \
         "$WORK/4_big.txt"   "$WORK/5_rest.txt" \
         > "$WORK/mega.txt"
 
-    # --- 3. API endpoints ---------------------------------------------------
-    info "Building API endpoint list..."
-    local api_sources=()
-    collect_existing api_sources \
-        "$WEBENUM/assetnote-apiroutes.txt" \
-        "$WC/api/api-endpoints.txt" \
-        "$WC/api/api-endpoints-res.txt" \
-        "$WC/api/api-seen-in-wild.txt" \
-        "$WC/api/objects.txt" \
+    # --- 4. dedicated API endpoint list -------------------------------------
+    # A focused, frequency-ordered API list (kept alongside the mixed tiers for
+    # API-only runs, e.g. ffuf/kr against a known API base). First occurrence
+    # wins, so the order is preserved rather than sorted.
+    info "Building dedicated API endpoint list..."
+    local api_backbone=(
+        "$WEBENUM/assetnote-apiroutes.txt"
+        "$KITE_SMALL"
+        "$WC/api/api-seen-in-wild.txt"
+        "$WC/api/api-endpoints.txt"
+        "$WC/api/api-endpoints-res.txt"
+        "$WC/api/objects.txt"
         "$WC/api/actions.txt"
+        "$KITE_LARGE"
+    )
+    cat_existing "${api_backbone[@]}" | sanitize_path | awk '!seen[$0]++' > "$WORK/api.txt"
+    [[ -s "$WORK/api.txt" ]] || warning "No API sources found."
 
-    if (( ${#api_sources[@]} )); then
-        cat -- "${api_sources[@]}" | normalize_api | awk '!seen[$0]++' > "$WORK/api.txt"
-    else
-        : > "$WORK/api.txt"
-        warning "No API sources found."
-    fi
-
-    # --- 4. extensions ------------------------------------------------------
+    # --- 5. extensions ------------------------------------------------------
     # raft-large-extensions is frequency-ordered (.php, .html, ... first), so
     # dedup in place rather than sorting -- the ordering is the useful part.
     if [[ -f "$WC/raft-large-extensions.txt" ]]; then
-        normalize_path < "$WC/raft-large-extensions.txt" | awk '!seen[$0]++' > "$WORK/extensions.txt"
+        normalize_ext < "$WC/raft-large-extensions.txt" | awk '!seen[$0]++' > "$WORK/extensions.txt"
     else
         : > "$WORK/extensions.txt"
     fi
 
-    # --- 5. publish ---------------------------------------------------------
+    # --- 6. publish ---------------------------------------------------------
     local out outputs=(2_small 3_medium 4_big 5_rest api extensions)
     for out in "${outputs[@]}"; do
         mv -f -- "$WORK/${out}.txt" "$OUTDIR/${out}.txt"

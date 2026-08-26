@@ -2,10 +2,9 @@
 #+SUBTITLE: Toolkit for fetching and building tiered wordlists & cracking rules
 #+OPTIONS: toc:2 num:nil
 
-* Overview
 
-This repository is for assembling the wordlists and rules that I used mainly in
-web content discovery, DNS enumeration and password cracking.
+This repository contains scripts for assembling the wordlists and rules that I
+use mainly in web content discovery, DNS enumeration and password cracking.
 
 #+begin_src sh
 # 0. Clone the repository
@@ -127,9 +126,9 @@ the category (custom/passwords.txt with the default --outdir):
 #+begin_example
 ./gen-web.sh -h
 
-Build tiered web-enumeration wordlists (URL paths + API routes) from the
-downloaded SecLists set, optionally enriched with the webenum sources
-(Assetnote, OneListForAll) fetched by ./fetch.sh.
+Build tiered web-enumeration wordlists (URL paths + API endpoints) from the
+downloaded SecLists set, enriched with the webenum sources fetched by
+./fetch.sh (Assetnote, OneListForAll, Kiterunner).
 
 Usage:
   ./gen-web.sh [options]
@@ -137,33 +136,30 @@ Usage:
 Options:
   -o, --outdir DIR    Where to write the lists      (default: ./custom/web)
   -w, --source DIR    Directory holding seclists/ (and webenum/) (default: .)
-  -s, --small N       Size of the small path tier   (default: 5000)
+  -s, --small N       Size of the small tier        (default: 5000)
   -m, --medium N      Cumulative size of medium     (default: 30000)
   -b, --big N         Cumulative size of big        (default: 100000)
   -j, --jobs N        Parallelism for sort          (default: nproc)
   -k, --keep          Keep the temporary work directory
   -h, --help          Show this help and exit
 
-Produces, under --outdir:
+The tiers hold both paths and API endpoints, ranked most-useful-first so the
+small tiers are the most efficient to run. Produces, under --outdir:
 
-  2_small.txt          most common content-discovery paths (top --small)
-  3_medium.txt         the next band                       (--small .. --medium)
-  4_big.txt            the next band                       (--medium .. --big)
-  5_rest.txt           every remaining unique path in the corpus
-  api.txt              merged, de-noised API endpoint list
-  extensions.txt       file extensions for -x/--extensions fuzzing
-
-It also writes one combined path list, one level up from --outdir and named
-after the category (custom/web.txt with the default --outdir):
-
-  ../web.txt           every unique path (all path tiers concatenated,
-                       common-first; api/extensions are kept separate)
+  ./custom/web/2_small.txt          most useful paths + API endpoints    (top --small)
+  ./custom/web/3_medium.txt         the next band                        (--small .. --medium)
+  ./custom/web/4_big.txt            the next band                        (--medium .. --big)
+  ./custom/web/5_rest.txt           every remaining unique path/endpoint in the corpus
+  ./custom/web/api.txt              dedicated API endpoint list (Assetnote + Kiterunner + SecLists)
+  ./custom/web/extensions.txt       file extensions for fuzzing
+  ./custom/web.txt                  all the previous
 #+end_example
 * Sources
 
 - [[https://wordlists.assetnote.io/][Assetnote wordlists]]
 - [[https://crackstation.net/][CrackStation]]
 - [[https://github.com/hashcat/hashcat][Hashcat]]
+- [[https://github.com/assetnote/kiterunner][Kiterunner]] (API route lists)
 - [[https://github.com/NotSoSecure/password_cracking_rules][OneRuleToRuleThemAll]], [[https://github.com/stealthsploit/OneRuleToRuleThemStill][OneRuleToRuleThemStill]] and [[https://github.com/six2dez/OneListForAll][OneListForAll]]
 - [[https://github.com/ignis-sec/Pwdb-Public][Pwdb-Public]]
 - [[https://github.com/danielmiessler/SecLists][SecLists]]
