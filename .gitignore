@@ -2,4 +2,5 @@
 .*
 !.gitignore
 !*.sh
+!LICENSE
 !README.org
