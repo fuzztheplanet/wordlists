@@ -1,6 +1,10 @@
 *
 .*
 !.gitignore
-!*.sh
 !LICENSE
 !README.org
+
+!*.sh
+
+!custom/
+!custom/sqli.txt
