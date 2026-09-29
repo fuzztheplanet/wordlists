@@ -154,6 +154,12 @@ small tiers are the most efficient to run. Produces, under --outdir:
   ./custom/web/extensions.txt       file extensions for fuzzing
   ./custom/web.txt                  all the previous
 #+end_example
+* custom
+*** sqli.txt
+
+A single, deduplicated SQL injection payload list, merged from the local
+SecLists SQLi corpus, several public payload projects and personal experiences.
+
 * Sources
 
 - [[https://wordlists.assetnote.io/][Assetnote wordlists]]
