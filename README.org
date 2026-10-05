@@ -24,6 +24,19 @@ ffuf -u 'http://www.example.com/FUZZ' -w ./custom/web/2_small.txt
 #+end_src
 
 * Scripts
+
+All scripts share the same command-line conventions:
+
+- Every long option has a short alias (=-o=/=--outdir=, ...) and takes its
+  value as either =--opt value= or =--opt=value=. A bare =--= ends option
+  parsing.
+- =fetch.sh= and =gen-cmdexec.sh= also accept positional arguments
+  (wordlist names and payload categories); the =gen-{dns,passwords,web}.sh=
+  builders take options only.
+- Diagnostic output (progress, warnings, errors) goes to stderr. Only data
+  is written to stdout -- the payloads from =gen-cmdexec.sh= and the
+  =--list= output from =fetch.sh= -- so redirecting stdout is always safe.
+
 ** fetch.sh - download the raw sources
 
 #+begin_example
@@ -154,6 +167,55 @@ small tiers are the most efficient to run. Produces, under --outdir:
   ./custom/web/extensions.txt       file extensions for fuzzing
   ./custom/web.txt                  all the previous
 #+end_example
+** gen-cmdexec.sh - OS command-execution payloads
+
+Generates command-injection PoC payloads (reverse shells, file creation,
+file read) from the templates in =cmdexec/= and prints them to stdout, one
+per line, so they can be redirected to a file or piped into another tool.
+The =touch= / =cat= payloads are the standard non-destructive way to prove
+command execution in a report (drop a marker file, read =/etc/passwd=).
+
+The templates bundle the filter-bypass and injection tricks catalogued in
+SecLists, PayloadsAllTheThings and HackTricks: alternate tools, command-name
+obfuscation (quotes, backslashes, concatenation), =$IFS=/space bypass,
+wildcard/glob binary paths, base64/hex/octal/rev/tr decoders, chaining
+separators, quote break-outs, URL-encoded operators and Windows variants.
+
+#+begin_example
+./gen-cmdexec.sh -h
+
+Generate OS command-execution payloads from the templates in ./cmdexec by
+substituting target-specific values, and print them to stdout (one per line)
+so they can be redirected to a file or piped into another tool.
+
+Usage:
+  ./gen-cmdexec.sh [category ...] [options]
+
+Categories (default: all templates):
+  reverse            reverse-shell connect-backs      (uses --ip [--port])
+  touch              create a file                    (uses --file)
+  cat                display a file                   (uses --file)
+  all                every template
+
+Options:
+  -i, --ip IP        listener IP for reverse shells      (default: 127.0.0.1)
+  -p, --port PORT    listener port for reverse shells   (default: 4444)
+  -f, --file PATH    target file for touch / cat        (default: /tmp/coucou.txt)
+  -s, --shell SH     shell for {SHELL} placeholders      (default: /bin/sh)
+  -d, --dir DIR      templates directory      (default: <script dir>/cmdexec)
+  -l, --list         list available categories (and payload counts) and exit
+  -h, --help         show this help and exit
+
+Each template in cmdexec/ is a category named after the file; add a new
+*.txt there to add a category. Placeholders: {IP} {PORT} {FILE} {SHELL}.
+
+Examples:
+  ./gen-cmdexec.sh reverse --ip 10.10.14.7 --port 9001 > rev.txt
+  ./gen-cmdexec.sh cat --file /etc/passwd
+  ./gen-cmdexec.sh touch --file /var/www/html/poc.txt
+  ./gen-cmdexec.sh all --ip 10.10.14.7 --file /etc/passwd
+#+end_example
+
 * custom
 *** sqli.txt
 
@@ -165,7 +227,9 @@ SecLists SQLi corpus, several public payload projects and personal experiences.
 - [[https://wordlists.assetnote.io/][Assetnote wordlists]]
 - [[https://crackstation.net/][CrackStation]]
 - [[https://github.com/hashcat/hashcat][Hashcat]]
+- [[https://github.com/HackTricks-wiki/hacktricks][HackTricks]]
 - [[https://github.com/assetnote/kiterunner][Kiterunner]] (API route lists)
 - [[https://github.com/NotSoSecure/password_cracking_rules][OneRuleToRuleThemAll]], [[https://github.com/stealthsploit/OneRuleToRuleThemStill][OneRuleToRuleThemStill]] and [[https://github.com/six2dez/OneListForAll][OneListForAll]]
+- [[https://github.com/swisskyrepo/PayloadsAllTheThings][PayloadsAllTheThings]]
 - [[https://github.com/ignis-sec/Pwdb-Public][Pwdb-Public]]
 - [[https://github.com/danielmiessler/SecLists][SecLists]]

@@ -66,8 +66,8 @@ log() {
     printf '[%s] %s%s\n' "$marker" "$prefix" "$*" >&"$stream"
 }
 
-info()    { (( QUIET )) || log '*' 1 "$@"; }
-success() { (( QUIET )) || log '+' 1 "$@"; }
+info()    { (( QUIET )) || log '*' 2 "$@"; }
+success() { (( QUIET )) || log '+' 2 "$@"; }
 warning() { log '!' 2 "$@"; }
 error()   { log '-' 2 "$@"; }
 die()     { error "$@"; exit 1; }
@@ -227,12 +227,15 @@ parse_args() {
 
     while (( $# )); do
         case "$1" in
+            --*=*)
+                set -- "${1%%=*}" "${1#*=}" "${@:2}"
+                continue
+                ;;
             -o|--outdir)
                 [[ $# -ge 2 ]] || die "--outdir requires an argument"
                 OUTDIR="$2"
                 shift 2
                 ;;
-            --outdir=*) OUTDIR="${1#*=}"; shift ;;
             -f|--force) FORCE=1; shift ;;
             -q|--quiet) QUIET=1; shift ;;
             -l|--list)

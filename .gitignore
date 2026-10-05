@@ -8,3 +8,5 @@
 
 !custom/
 !custom/sqli.txt
+!cmdexec/
+!cmdexec/*.txt

